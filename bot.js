@@ -6,7 +6,7 @@ const path = require('path');
 // Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'OWNER_TELEGRAM_ID';
-const WEB_APP_URL = process.env.WEB_APP_URL || 'https://your-app.vercel.app';
+const WEB_APP_URL = process.env.VERCEL_URL || 'https://your-app.vercel.app';
 
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });

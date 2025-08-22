@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Telegram Bingo Bot with Vue.js Mini App",
   "main": "bot.js",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node bot.js",
     "dev": "concurrently \"npm run dev:bot\" \"npm run dev:web\"",
