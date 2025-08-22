@@ -22,10 +22,5 @@
       "src": "/(.*)",
       "dest": "/dist/$1"
     }
-  ],
-  "env": {
-    "BOT_TOKEN": "@bot_token",
-    "BOT_OWNER_ID": "@bot_owner_id",
-    "WEB_APP_URL": "@web_app_url"
-  }
+  ]
 }
