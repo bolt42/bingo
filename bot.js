@@ -12,7 +12,7 @@ console.log(BOT_TOKEN);
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { webHook: { port: 443 } });
 
-bot.setWebHook(`${YOUR_DEPLOYED_HTTPS_URL}/api/bot`);
+bot.setWebHook(`https://${process.env.VERCEL_URL}/api/bot`);
 // In-memory data storage
 let users = {};
 let rooms = {
