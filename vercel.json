@@ -25,6 +25,7 @@
   ],
   "env": {
     "BOT_TOKEN" :  "8313154881:AAG8UwRUPKa6eiSMrPeWGxyZOpncz1S91Wc",
-    "BOT_OWNER_ID" :  "5631652979"
+    "BOT_OWNER_ID" :  "5631652979",
+    "NODE_ENV" : "production"
   }
 }
