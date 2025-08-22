@@ -10,9 +10,8 @@ const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'OWNER_TELEGRAM_ID';
 const WEB_APP_URL =  `https://${process.env.VERCEL_URL}` ;
 console.log(BOT_TOKEN);
 // Initialize bot
-const bot = new TelegramBot(BOT_TOKEN, { webHook: { port: 443 } });
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-bot.setWebHook(`https://${process.env.VERCEL_URL}/api/bot`);
 // In-memory data storage
 let users = {};
 let rooms = {
