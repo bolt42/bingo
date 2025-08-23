@@ -11,7 +11,7 @@ const WEB_APP_URL =  `https://${process.env.VERCEL_URL}` ;
 console.log(BOT_TOKEN);
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
-bot.setWebHook(`https://${process.env.VERCEL_URL}/bot`);
+bot.setWebHook(`https://${process.env.VERCEL_URL}/api/bot`);
 
 
 // In-memory data storage
