@@ -4,13 +4,11 @@ const TelegramBot = require('node-telegram-bot-api');
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'OWNER_TELEGRAM_ID';
 
-// Get the web app URL from the request or environment
-const getWebAppUrl = (req) => {
-  if (req && req.headers && req.headers.host) {
-    return `https://${req.headers.host}`;
-  }
-  return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
-};
+// Validate bot token
+if (!BOT_TOKEN || BOT_TOKEN === 'YOUR_BOT_TOKEN_HERE') {
+  console.error('❌ BOT_TOKEN is not set properly');
+  throw new Error('BOT_TOKEN environment variable is required');
+}
 
 // Initialize bot for webhook
 const bot = new TelegramBot(BOT_TOKEN, { webHook: false });
@@ -42,12 +40,55 @@ let rooms = {
   }
 };
 
+// Helper function to get web app URL
+const getWebAppUrl = (req) => {
+  // Try to get URL from request headers first
+  if (req && req.headers && req.headers.host) {
+    return `https://${req.headers.host}`;
+  }
+  
+  // Fallback to environment variable
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  
+  // Final fallback
+  return 'http://localhost:3000';
+};
+
+// Helper function to send error message safely
+const sendErrorMessage = async (chatId, error, context = '') => {
+  try {
+    let errorMessage = '❌ Something went wrong. Please try again.';
+    
+    // Provide more specific error messages based on error type
+    if (error.code === 'ETELEGRAM') {
+      if (error.response && error.response.statusCode === 403) {
+        errorMessage = '❌ Bot is blocked by user. Please unblock the bot and try again.';
+      } else if (error.response && error.response.statusCode === 429) {
+        errorMessage = '⚠️ Too many requests. Please wait a moment and try again.';
+      } else {
+        errorMessage = '❌ Telegram API error. Please try again later.';
+      }
+    } else if (error.message && error.message.includes('network')) {
+      errorMessage = '🌐 Network error. Please check your connection and try again.';
+    }
+    
+    console.error(`Error in ${context}:`, error);
+    await bot.sendMessage(chatId, errorMessage);
+  } catch (sendError) {
+    console.error('Failed to send error message:', sendError);
+  }
+};
+
 // Bot commands
 bot.onText(/\/start/, async (msg) => {
   try {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
     const username = msg.from.username || msg.from.first_name || 'Player';
+
+    console.log(`User ${userId} (${username}) started the bot`);
 
     // Register user if not exists
     if (!users[userId]) {
@@ -60,6 +101,7 @@ bot.onText(/\/start/, async (msg) => {
         winCount: 0,
         totalWinnings: 0
       };
+      console.log(`New user registered: ${userId}`);
     }
 
     const welcomeMessage = `🎉 Welcome to Telegram Bingo Bot!
@@ -68,28 +110,26 @@ Your starting balance: ${users[userId].balance} ETB
 
 Click the button below to start playing!`;
 
-    // Use a fallback URL for now - we'll fix this in the webhook handler
+    // Get web app URL - this will be fixed in the webhook handler
     const webAppUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+    console.log(`Web app URL: ${webAppUrl}`);
 
     const options = {
       reply_markup: {
         inline_keyboard: [[
           {
             text: '🎯 Start Game',
-            web_app: { url: `${webAppUrl}?userId=${userId}&username=${username}` }
+            web_app: { url: `${webAppUrl}?userId=${userId}&username=${encodeURIComponent(username)}` }
           }
         ]]
       }
     };
 
     await bot.sendMessage(chatId, welcomeMessage, options);
+    console.log(`Welcome message sent to user ${userId}`);
+    
   } catch (error) {
-    console.error('Error in /start command:', error);
-    try {
-      await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
+    await sendErrorMessage(msg.chat.id, error, '/start command');
   }
 });
 
@@ -121,16 +161,11 @@ bot.onText(/\/createroom (.+)/, async (msg, match) => {
       };
 
       await bot.sendMessage(chatId, `✅ Room created: ${rooms[roomId].name}`);
-    } catch (error) {
+    } catch (parseError) {
       await bot.sendMessage(chatId, '❌ Invalid room data. Use: /createroom {"name":"Room Name","betAmount":10,"maxPlayers":50}');
     }
   } catch (error) {
-    console.error('Error in /createroom command:', error);
-    try {
-      await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
+    await sendErrorMessage(msg.chat.id, error, '/createroom command');
   }
 });
 
@@ -152,12 +187,7 @@ bot.onText(/\/deleteroom (.+)/, async (msg, match) => {
       await bot.sendMessage(chatId, '❌ Room not found');
     }
   } catch (error) {
-    console.error('Error in /deleteroom command:', error);
-    try {
-      await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
+    await sendErrorMessage(msg.chat.id, error, '/deleteroom command');
   }
 });
 
@@ -183,18 +213,20 @@ bot.onText(/\/winners/, async (msg) => {
 
     await bot.sendMessage(chatId, message || 'No winners yet');
   } catch (error) {
-    console.error('Error in /winners command:', error);
-    try {
-      await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
+    await sendErrorMessage(msg.chat.id, error, '/winners command');
   }
 });
 
 // Webhook handler for Vercel
 module.exports = async (req, res) => {
   try {
+    console.log(`[${new Date().toISOString()}] Webhook request received:`, {
+      method: req.method,
+      url: req.url,
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : []
+    });
+
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -208,7 +240,15 @@ module.exports = async (req, res) => {
 
     // Only handle POST requests
     if (req.method !== 'POST') {
+      console.log(`Method not allowed: ${req.method}`);
       res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    // Validate request body
+    if (!req.body) {
+      console.error('No request body received');
+      res.status(400).json({ error: 'No request body' });
       return;
     }
 
@@ -220,6 +260,7 @@ module.exports = async (req, res) => {
       
       try {
         await bot.handleUpdate(req.body);
+        console.log('Webhook processed successfully');
         res.status(200).json({ success: true });
       } catch (updateError) {
         console.error('Error handling update:', updateError);
