@@ -3,7 +3,14 @@ const TelegramBot = require('node-telegram-bot-api');
 // Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'OWNER_TELEGRAM_ID';
-const WEB_APP_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+
+// Get the web app URL from the request or environment
+const getWebAppUrl = (req) => {
+  if (req && req.headers && req.headers.host) {
+    return `https://${req.headers.host}`;
+  }
+  return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+};
 
 // Initialize bot for webhook
 const bot = new TelegramBot(BOT_TOKEN, { webHook: false });
@@ -61,12 +68,15 @@ Your starting balance: ${users[userId].balance} ETB
 
 Click the button below to start playing!`;
 
+    // Use a fallback URL for now - we'll fix this in the webhook handler
+    const webAppUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+
     const options = {
       reply_markup: {
         inline_keyboard: [[
           {
             text: '🎯 Start Game',
-            web_app: { url: `${WEB_APP_URL}?userId=${userId}&username=${username}` }
+            web_app: { url: `${webAppUrl}?userId=${userId}&username=${username}` }
           }
         ]]
       }
@@ -205,8 +215,16 @@ module.exports = async (req, res) => {
     // Handle Telegram webhook
     if (req.body && req.body.message) {
       console.log('Received webhook:', JSON.stringify(req.body, null, 2));
-      await bot.handleUpdate(req.body);
-      res.status(200).json({ success: true });
+      console.log('Bot token:', BOT_TOKEN ? 'Set' : 'Not set');
+      console.log('Web app URL:', process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'Not set');
+      
+      try {
+        await bot.handleUpdate(req.body);
+        res.status(200).json({ success: true });
+      } catch (updateError) {
+        console.error('Error handling update:', updateError);
+        res.status(500).json({ error: 'Update handling failed' });
+      }
     } else {
       console.error('Invalid webhook data:', req.body);
       res.status(400).json({ error: 'Invalid webhook data' });
