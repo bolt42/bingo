@@ -204,9 +204,11 @@ module.exports = async (req, res) => {
 
     // Handle Telegram webhook
     if (req.body && req.body.message) {
+      console.log('Received webhook:', JSON.stringify(req.body, null, 2));
       await bot.handleUpdate(req.body);
       res.status(200).json({ success: true });
     } else {
+      console.error('Invalid webhook data:', req.body);
       res.status(400).json({ error: 'Invalid webhook data' });
     }
   } catch (error) {

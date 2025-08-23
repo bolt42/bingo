@@ -14,37 +14,213 @@ console.log('Web App URL:', WEB_APP_URL);
 
 // Initialize bot - use polling for development, webhook for production
 let bot;
-if (process.env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
-  // Use webhook for production
-  bot = new TelegramBot(BOT_TOKEN, { webHook: false });
-  
-  // Set webhook for production
-  const webhookUrl = `https://${process.env.VERCEL_URL}/api/bot`;
-  bot.setWebHook(webhookUrl)
-    .then(() => console.log('Webhook set successfully:', webhookUrl))
-    .catch(err => {
-      console.error('Failed to set webhook:', err);
-      // Fallback to polling if webhook fails
-      bot = new TelegramBot(BOT_TOKEN, { polling: true });
-      console.log('Falling back to polling mode');
-    });
-} else {
-  // Use polling for development
-  bot = new TelegramBot(BOT_TOKEN, { polling: true });
-  console.log('Using polling mode for development');
-}
 
-// Ensure bot is initialized before setting up commands
 const initializeBot = async () => {
   try {
     if (process.env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
+      // Use webhook for production
+      bot = new TelegramBot(BOT_TOKEN, { webHook: false });
+      
+      // Set webhook for production
       const webhookUrl = `https://${process.env.VERCEL_URL}/api/bot`;
       await bot.setWebHook(webhookUrl);
       console.log('Webhook set successfully:', webhookUrl);
+    } else {
+      // Use polling for development
+      bot = new TelegramBot(BOT_TOKEN, { polling: true });
+      console.log('Using polling mode for development');
     }
+    
+    // Set up bot commands after initialization
+    setupBotCommands();
+    
   } catch (error) {
     console.error('Bot initialization error:', error);
+    // Fallback to polling if webhook fails
+    bot = new TelegramBot(BOT_TOKEN, { polling: true });
+    console.log('Falling back to polling mode');
+    setupBotCommands();
   }
+};
+
+// Function to set up bot commands
+const setupBotCommands = () => {
+  // Bot commands
+  bot.onText(/\/start/, async (msg) => {
+    try {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString();
+      const username = msg.from.username || msg.from.first_name || 'Player';
+
+      // Register user if not exists
+      if (!users[userId]) {
+        users[userId] = {
+          id: userId,
+          username: username,
+          balance: 50,
+          cartelas: [],
+          currentRoom: null,
+          winCount: 0,
+          totalWinnings: 0
+        };
+      }
+
+      const welcomeMessage = `🎉 Welcome to Telegram Bingo Bot!
+
+Your starting balance: ${users[userId].balance} ETB
+
+Click the button below to start playing!`;
+
+      const options = {
+        reply_markup: {
+          inline_keyboard: [[
+            {
+              text: '🎯 Start Game',
+              web_app: { url: `${WEB_APP_URL}?userId=${userId}&username=${username}` }
+            }
+          ]]
+        }
+      };
+
+      await bot.sendMessage(chatId, welcomeMessage, options);
+    } catch (error) {
+      console.error('Error in /start command:', error);
+      try {
+        await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    }
+  });
+
+  // Owner commands
+  bot.onText(/\/createroom (.+)/, async (msg, match) => {
+    try {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString();
+
+      if (userId !== BOT_OWNER_ID) {
+        await bot.sendMessage(chatId, '❌ Unauthorized command');
+        return;
+      }
+
+      try {
+        const roomData = JSON.parse(match[1]);
+        const roomId = `room_${Date.now()}`;
+        
+        rooms[roomId] = {
+          id: roomId,
+          name: roomData.name || 'New Room',
+          betAmount: roomData.betAmount || 10,
+          maxPlayers: roomData.maxPlayers || 50,
+          players: [],
+          status: 'waiting',
+          drawnNumbers: [],
+          winner: null,
+          gameStartTime: null
+        };
+
+        await bot.sendMessage(chatId, `✅ Room created: ${rooms[roomId].name}`);
+      } catch (error) {
+        await bot.sendMessage(chatId, '❌ Invalid room data. Use: /createroom {"name":"Room Name","betAmount":10,"maxPlayers":50}');
+      }
+    } catch (error) {
+      console.error('Error in /createroom command:', error);
+      try {
+        await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    }
+  });
+
+  bot.onText(/\/deleteroom (.+)/, async (msg, match) => {
+    try {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString();
+
+      if (userId !== BOT_OWNER_ID) {
+        await bot.sendMessage(chatId, '❌ Unauthorized command');
+        return;
+      }
+
+      const roomId = match[1];
+      if (rooms[roomId]) {
+        delete rooms[roomId];
+        await bot.sendMessage(chatId, `✅ Room ${roomId} deleted`);
+      } else {
+        await bot.sendMessage(chatId, '❌ Room not found');
+      }
+    } catch (error) {
+      console.error('Error in /deleteroom command:', error);
+      try {
+        await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    }
+  });
+
+  bot.onText(/\/winners/, async (msg) => {
+    try {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString();
+
+      if (userId !== BOT_OWNER_ID) {
+        await bot.sendMessage(chatId, '❌ Unauthorized command');
+        return;
+      }
+
+      const winners = Object.values(users)
+        .filter(user => user.winCount > 0)
+        .sort((a, b) => b.totalWinnings - a.totalWinnings)
+        .slice(0, 10);
+
+      let message = '🏆 Top Winners:\n\n';
+      winners.forEach((user, index) => {
+        message += `${index + 1}. ${user.username} - ${user.winCount} wins, ${user.totalWinnings} coins\n`;
+      });
+
+      await bot.sendMessage(chatId, message || 'No winners yet');
+    } catch (error) {
+      console.error('Error in /winners command:', error);
+      try {
+        await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    }
+  });
+
+  bot.onText(/\/approvepayment (.+)/, async (msg, match) => {
+    try {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString();
+
+      if (userId !== BOT_OWNER_ID) {
+        await bot.sendMessage(chatId, '❌ Unauthorized command');
+        return;
+      }
+
+      const targetUserId = match[1];
+      const request = withdrawRequests.find(r => r.userId === targetUserId);
+      
+      if (request) {
+        await bot.sendMessage(request.chatId, `✅ Your withdrawal of ${request.amount} coins has been approved!`);
+        withdrawRequests = withdrawRequests.filter(r => r.userId !== targetUserId);
+        await bot.sendMessage(chatId, `✅ Payment approved for user ${targetUserId}`);
+      } else {
+        await bot.sendMessage(chatId, '❌ No pending withdrawal request found');
+      }
+    } catch (error) {
+      console.error('Error in /approvepayment command:', error);
+      try {
+        await bot.sendMessage(msg.chat.id, 'Sorry, something went wrong. Please try again.');
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    }
+  });
 };
 
 
@@ -86,161 +262,18 @@ app.use(express.json());
 // Serve static files
 app.use(express.static('dist'));
 
-// Bot commands
-bot.onText(/\/start/, async (msg) => {
-  try {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-  const username = msg.from.username || msg.from.first_name || 'Player';
-
-  // Register user if not exists
-  if (!users[userId]) {
-    users[userId] = {
-      id: userId,
-      username: username,
-      balance: 50,
-      cartelas: [],
-      currentRoom: null,
-      winCount: 0,
-      totalWinnings: 0
-    };
-  }
-
-  const welcomeMessage = `🎉 Welcome to Telegram Bingo Bot!
-
-Your starting balance: ${users[userId].balance} ETB
-
-Click the button below to start playing!`;
-
-  const options = {
-    reply_markup: {
-      inline_keyboard: [[
-        {
-          text: '🎯 Start Game',
-          web_app: { url: `${WEB_APP_URL}?userId=${userId}&username=${username}` }
-        }
-      ]]
-    }
-  };
-
-  bot.sendMessage(chatId, welcomeMessage, options);
-  } catch (error) {
-    console.error('Error in /start command:', error);
-    try {
-      bot.sendMessage(chatId, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
-  }
-});
-
-// Owner commands
-bot.onText(/\/createroom (.+)/, async (msg, match) => {
-  try {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-
-  if (userId !== BOT_OWNER_ID) {
-    bot.sendMessage(chatId, '❌ Unauthorized command');
-    return;
-  }
-
-  try {
-    const roomData = JSON.parse(match[1]);
-    const roomId = `room_${Date.now()}`;
-    
-    rooms[roomId] = {
-      id: roomId,
-      name: roomData.name || 'New Room',
-      betAmount: roomData.betAmount || 10,
-      maxPlayers: roomData.maxPlayers || 50,
-      players: [],
-      status: 'waiting',
-      drawnNumbers: [],
-      winner: null,
-      gameStartTime: null
-    };
-
-    bot.sendMessage(chatId, `✅ Room created: ${rooms[roomId].name}`);
-  } catch (error) {
-    bot.sendMessage(chatId, '❌ Invalid room data. Use: /createroom {"name":"Room Name","betAmount":10,"maxPlayers":50}');
-  }
-  } catch (error) {
-    console.error('Error in /createroom command:', error);
-    try {
-      bot.sendMessage(chatId, 'Sorry, something went wrong. Please try again.');
-    } catch (sendError) {
-      console.error('Error sending error message:', sendError);
-    }
-  }
-});
-
-bot.onText(/\/deleteroom (.+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-
-  if (userId !== BOT_OWNER_ID) {
-    bot.sendMessage(chatId, '❌ Unauthorized command');
-    return;
-  }
-
-  const roomId = match[1];
-  if (rooms[roomId]) {
-    delete rooms[roomId];
-    bot.sendMessage(chatId, `✅ Room ${roomId} deleted`);
-  } else {
-    bot.sendMessage(chatId, '❌ Room not found');
-  }
-});
-
-bot.onText(/\/winners/, (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-
-  if (userId !== BOT_OWNER_ID) {
-    bot.sendMessage(chatId, '❌ Unauthorized command');
-    return;
-  }
-
-  const winners = Object.values(users)
-    .filter(user => user.winCount > 0)
-    .sort((a, b) => b.totalWinnings - a.totalWinnings)
-    .slice(0, 10);
-
-  let message = '🏆 Top Winners:\n\n';
-  winners.forEach((user, index) => {
-    message += `${index + 1}. ${user.username} - ${user.winCount} wins, ${user.totalWinnings} coins\n`;
-  });
-
-  bot.sendMessage(chatId, message || 'No winners yet');
-});
-
-bot.onText(/\/approvepayment (.+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-
-  if (userId !== BOT_OWNER_ID) {
-    bot.sendMessage(chatId, '❌ Unauthorized command');
-    return;
-  }
-
-  const targetUserId = match[1];
-  const request = withdrawRequests.find(r => r.userId === targetUserId);
-  
-  if (request) {
-    bot.sendMessage(request.chatId, `✅ Your withdrawal of ${request.amount} coins has been approved!`);
-    withdrawRequests = withdrawRequests.filter(r => r.userId !== targetUserId);
-    bot.sendMessage(chatId, `✅ Payment approved for user ${targetUserId}`);
-  } else {
-    bot.sendMessage(chatId, '❌ No pending withdrawal request found');
-  }
-});
+// Bot commands will be set up after bot initialization
 
 // Webhook endpoint for Telegram bot
-app.post('/api/bot', (req, res) => {
+app.post('/api/bot', async (req, res) => {
   try {
+    if (!bot) {
+      console.error('Bot not initialized yet, initializing...');
+      await initializeBot();
+    }
+    
     if (bot && bot.handleUpdate) {
-      bot.handleUpdate(req.body);
+      await bot.handleUpdate(req.body);
       res.sendStatus(200);
     } else {
       console.error('Bot not properly initialized');

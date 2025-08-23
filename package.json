@@ -12,6 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build",
+    "deploy-full": "chmod +x deploy.sh && ./deploy.sh",
     "setup-webhook": "node setup-webhook.js",
     "test-webhook": "node test-webhook.js"
   },
