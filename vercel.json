@@ -19,8 +19,8 @@
       "dest": "/bot.js"
     },
     {
-      "src": "/bot",
-      "dest": "/bot.js"
+      "src": "/api/bot/(.*",
+      "dest": "api/bot.js"
     },
     {
       "src": "/(.*)",
