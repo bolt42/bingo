@@ -15,12 +15,12 @@
   ],
   "routes": [
     {
+      "src": "/api/bot",
+      "dest": "/api/bot.js"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/bot.js"
-    },
-   {
-      "src": "/api/bot(?:/(.*))?",
-      "dest": "/api/bot.js"
     },
     {
       "src": "/(.*)",

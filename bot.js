@@ -7,11 +7,45 @@ require('dotenv').config();
 // Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'OWNER_TELEGRAM_ID';
-const WEB_APP_URL =  `https://${process.env.VERCEL_URL}` ;
-console.log(BOT_TOKEN);
-// Initialize bot
-const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
-bot.setWebHook(`https://${process.env.VERCEL_URL}/api/bot`);
+const WEB_APP_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+
+console.log('Bot Token:', BOT_TOKEN ? 'Set' : 'Not set');
+console.log('Web App URL:', WEB_APP_URL);
+
+// Initialize bot - use polling for development, webhook for production
+let bot;
+if (process.env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
+  // Use webhook for production
+  bot = new TelegramBot(BOT_TOKEN, { webHook: false });
+  
+  // Set webhook for production
+  const webhookUrl = `https://${process.env.VERCEL_URL}/api/bot`;
+  bot.setWebHook(webhookUrl)
+    .then(() => console.log('Webhook set successfully:', webhookUrl))
+    .catch(err => {
+      console.error('Failed to set webhook:', err);
+      // Fallback to polling if webhook fails
+      bot = new TelegramBot(BOT_TOKEN, { polling: true });
+      console.log('Falling back to polling mode');
+    });
+} else {
+  // Use polling for development
+  bot = new TelegramBot(BOT_TOKEN, { polling: true });
+  console.log('Using polling mode for development');
+}
+
+// Ensure bot is initialized before setting up commands
+const initializeBot = async () => {
+  try {
+    if (process.env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
+      const webhookUrl = `https://${process.env.VERCEL_URL}/api/bot`;
+      await bot.setWebHook(webhookUrl);
+      console.log('Webhook set successfully:', webhookUrl);
+    }
+  } catch (error) {
+    console.error('Bot initialization error:', error);
+  }
+};
 
 
 // In-memory data storage
@@ -53,7 +87,8 @@ app.use(express.json());
 app.use(express.static('dist'));
 
 // Bot commands
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
+  try {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const username = msg.from.username || msg.from.first_name || 'Player';
@@ -89,10 +124,19 @@ Click the button below to start playing!`;
   };
 
   bot.sendMessage(chatId, welcomeMessage, options);
+  } catch (error) {
+    console.error('Error in /start command:', error);
+    try {
+      bot.sendMessage(chatId, 'Sorry, something went wrong. Please try again.');
+    } catch (sendError) {
+      console.error('Error sending error message:', sendError);
+    }
+  }
 });
 
 // Owner commands
-bot.onText(/\/createroom (.+)/, (msg, match) => {
+bot.onText(/\/createroom (.+)/, async (msg, match) => {
+  try {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
 
@@ -120,6 +164,14 @@ bot.onText(/\/createroom (.+)/, (msg, match) => {
     bot.sendMessage(chatId, `✅ Room created: ${rooms[roomId].name}`);
   } catch (error) {
     bot.sendMessage(chatId, '❌ Invalid room data. Use: /createroom {"name":"Room Name","betAmount":10,"maxPlayers":50}');
+  }
+  } catch (error) {
+    console.error('Error in /createroom command:', error);
+    try {
+      bot.sendMessage(chatId, 'Sorry, something went wrong. Please try again.');
+    } catch (sendError) {
+      console.error('Error sending error message:', sendError);
+    }
   }
 });
 
@@ -181,6 +233,22 @@ bot.onText(/\/approvepayment (.+)/, (msg, match) => {
     bot.sendMessage(chatId, `✅ Payment approved for user ${targetUserId}`);
   } else {
     bot.sendMessage(chatId, '❌ No pending withdrawal request found');
+  }
+});
+
+// Webhook endpoint for Telegram bot
+app.post('/api/bot', (req, res) => {
+  try {
+    if (bot && bot.handleUpdate) {
+      bot.handleUpdate(req.body);
+      res.sendStatus(200);
+    } else {
+      console.error('Bot not properly initialized');
+      res.sendStatus(500);
+    }
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.sendStatus(500);
   }
 });
 
@@ -455,9 +523,10 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🎯 Telegram Bingo Bot running on port ${PORT}`);
-  console.log(`🤖 Bot polling started`);
+  await initializeBot();
+  console.log(`🤖 Bot initialized successfully`);
 });
 
 // Handle graceful shutdown
