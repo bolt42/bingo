@@ -19,6 +19,10 @@
       "dest": "/bot.js"
     },
     {
+      "src": "/bot",
+      "dest": "/bot.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/dist/$1"
     }
